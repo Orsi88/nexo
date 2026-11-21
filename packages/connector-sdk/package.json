@@ -1,0 +1,13 @@
+{
+  "name": "@painel/connector-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contrato versionado dos conectores de provedores CI/CD e verificação de conformidade (ADR-006).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/contracts": "*"
+  }
+}

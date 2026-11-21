@@ -1,0 +1,13 @@
+{
+  "name": "@painel/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Esquemas compartilhados: manifesto de configuração de pipeline, capacidades de conectores e estados.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

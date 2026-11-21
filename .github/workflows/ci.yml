@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.7-alpine3.23
+        env:
+          POSTGRES_DB: painel_test
+          POSTGRES_USER: painel_admin
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U painel_admin -d painel_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      # Ativa o teste de isolamento entre organizações (RNF-008).
+      TEST_DATABASE_ADMIN_URL: postgres://painel_admin:ci-only-password@localhost:5432/painel_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build:web

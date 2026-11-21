@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+*.log
+# Configuração local de MCP (aponta para organizações reais; nunca versionar)
+.mcp.json
+# Lista local de termos proibidos (scripts/check-sensitive.mjs); nunca versionar
+.sensitive-words
+# Artefatos baixados das execuções (worker em desenvolvimento)
+data/

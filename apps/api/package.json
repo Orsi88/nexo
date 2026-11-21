@@ -1,0 +1,20 @@
+{
+  "name": "@painel/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Processo api: HTTP, SSE, webhooks e endpoint público de links. Também roda em modo report-origin (ADR-007).",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@painel/connector-azure-devops": "*",
+    "@painel/connector-github": "*",
+    "@painel/connector-sdk": "*",
+    "@painel/core": "*",
+    "fastify": "5.12.8",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@painel/processor-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contrato versionado dos processadores de relatório (RNF-022, §20.3).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/contracts": "*"
+  }
+}

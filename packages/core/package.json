@@ -1,0 +1,24 @@
+{
+  "name": "@painel/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Módulos de domínio do monólito modular (ADR-001) e migrações do banco.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "dependencies": {
+    "@painel/assist": "*",
+    "@painel/connector-sdk": "*",
+    "@painel/contracts": "*",
+    "@painel/processor-sdk": "*",
+    "pg": "8.23.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@painel/processor-junit": "*",
+    "@painel/processor-k6": "*",
+    "@types/pg": "8.23.1"
+  }
+}

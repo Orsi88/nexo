@@ -1,0 +1,15 @@
+{
+  "name": "@painel/connector-azure-devops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Conector Azure DevOps Pipelines (primeiro provedor, RF-012): leitura, parâmetros do YAML, disparo, cancelamento, logs e artefatos, confirmados no spike S1.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/connector-sdk": "*",
+    "@painel/contracts": "*",
+    "yaml": "2.9.1"
+  }
+}

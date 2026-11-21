@@ -1,0 +1,26 @@
+{
+  "name": "@painel/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Processo worker: sincronização, disparo, reconciliação, ingestão, retenção, e-mail e sessões assistidas.",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@painel/connector-azure-devops": "*",
+    "@painel/connector-github": "*",
+    "@painel/connector-sdk": "*",
+    "@painel/core": "*",
+    "@painel/processor-junit": "*",
+    "@painel/processor-k6": "*",
+    "@painel/processor-playwright": "*",
+    "@painel/processor-sdk": "*",
+    "nodemailer": "10.6.1",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2"
+  }
+}

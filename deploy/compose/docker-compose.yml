@@ -1,0 +1,157 @@
+# Implantação de referência self-hosted (docs/arquitetura.md §10, Q-001).
+# Uso: cp .env.example .env  (troque todos os valores)  &&  docker compose up -d --build
+# Painel: http://localhost:8080   Relatórios (origem isolada, ADR-007): http://localhost:8081
+
+name: painel-pipelines
+
+x-app: &app
+  build:
+    context: ../..
+    target: runtime
+  image: painel-pipelines/runtime:dev
+  restart: unless-stopped
+  environment: &app-env
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    DATABASE_URL: postgres://painel_app_user:${APP_DB_PASSWORD:?defina APP_DB_PASSWORD}@postgres:5432/painel
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+    REPORT_ORIGIN_URL: ${REPORT_ORIGIN_URL:-http://localhost:8081}
+    # Sessão e links de acesso (ADR-011).
+    SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-480}
+    SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-168}
+    INVITE_TTL_HOURS: ${INVITE_TTL_HOURS:-72}
+    PASSWORD_RESET_TTL_HOURS: ${PASSWORD_RESET_TTL_HOURS:-24}
+    AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-20}
+    S3_ENDPOINT: http://storage:8333
+    S3_BUCKET: ${S3_BUCKET:-painel-artifacts}
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:?defina S3_ACCESS_KEY}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:?defina S3_SECRET_KEY}
+    # Chave mestra da cifragem envelope dos segredos (RNF-006): protege as credenciais dos provedores.
+    # Perder ou trocar esta chave torna as credenciais guardadas ilegíveis; guarde-a com o backup.
+    SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY:?defina SECRETS_MASTER_KEY}
+    AZURE_DEVOPS_EXTRA_HOSTS: ${AZURE_DEVOPS_EXTRA_HOSTS:-}
+    GITHUB_EXTRA_HOSTS: ${GITHUB_EXTRA_HOSTS:-}
+    # E-mail pelo SMTP da instalação (incremento 7). Vazio = convites e avisos só no painel.
+    SMTP_URL: ${SMTP_URL:-}
+    SMTP_FROM: ${SMTP_FROM:-Nexo <nexo@localhost>}
+
+services:
+  postgres:
+    image: postgres:18.7-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: painel
+      POSTGRES_USER: painel_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U painel_admin -d painel"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Object storage compatível com S3 (ADR-005). SeaweedFS no lugar do MinIO, que não publica mais imagens.
+  storage:
+    image: chrislusf/seaweedfs:4.54
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?defina S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?defina S3_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /etc/seaweedfs
+        printf '{"identities":[{"name":"painel","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /etc/seaweedfs/s3.json
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["node", "apps/api/src/migrate.ts"]
+    environment:
+      DATABASE_ADMIN_URL: postgres://painel_admin:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/painel
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: ["node", "apps/api/src/main.ts"]
+    environment:
+      <<: *app-env
+      MODE: api
+      PORT: "3000"
+      # Atrás do Caddy: o IP do cliente vem de X-Forwarded-For (limite de tentativas e auditoria).
+      TRUST_PROXY: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: ["node", "apps/worker/src/main.ts"]
+    environment:
+      <<: *app-env
+      # Artefatos originais das execuções (R-007). Troca por object storage S3 quando o adaptador chegar.
+      ARTIFACTS_DIR: /data/artifacts
+    volumes:
+      - artifacts-data:/data/artifacts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      storage:
+        condition: service_healthy
+
+  report-origin:
+    <<: *app
+    command: ["node", "apps/api/src/main.ts"]
+    environment:
+      <<: *app-env
+      MODE: report-origin
+      PORT: "3001"
+    depends_on:
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  proxy:
+    build:
+      context: ../..
+      target: proxy
+    image: painel-pipelines/proxy:dev
+    restart: unless-stopped
+    environment:
+      REPORT_ORIGIN_URL: ${REPORT_ORIGIN_URL:-http://localhost:8081}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      api:
+        condition: service_healthy
+      report-origin:
+        condition: service_healthy
+
+volumes:
+  artifacts-data:
+  postgres-data:
+  storage-data:

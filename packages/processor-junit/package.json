@@ -1,0 +1,13 @@
+{
+  "name": "@painel/processor-junit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Processador genérico de JUnit XML (Q-004, §20.3).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/processor-sdk": "*"
+  }
+}

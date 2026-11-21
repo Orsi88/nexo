@@ -1,0 +1,15 @@
+{
+  "name": "@painel/connector-github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Conector GitHub Actions: workflows, parâmetros de workflow_dispatch, disparo (com o id da execução), acompanhamento, cancelamento, logs e artefatos, confirmados no spike S4.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/connector-sdk": "*",
+    "@painel/contracts": "*",
+    "yaml": "2.9.1"
+  }
+}

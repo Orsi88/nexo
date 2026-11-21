@@ -1,0 +1,17 @@
+{
+  "name": "@painel/processor-playwright",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Processadores de relatórios Playwright (JSON estruturado e HTML preservado). Q-004.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/processor-sdk": "*"
+  },
+  "devDependencies": {
+    "@painel/processor-junit": "*",
+    "@painel/processor-k6": "*"
+  }
+}

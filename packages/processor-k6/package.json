@@ -1,0 +1,13 @@
+{
+  "name": "@painel/processor-k6",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Processador de resumos k6 (RF-188 a RF-191). O formato exato depende de P-008.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@painel/processor-sdk": "*"
+  }
+}

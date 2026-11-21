@@ -1,0 +1,14 @@
+{
+  "name": "@painel/assist",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Onboarding e edição assistidos pela IA do próprio usuário (BYOAI/BYOK) com servidores MCP (RF-172 a RF-187). Opcional.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
+    "@painel/contracts": "*"
+  }
+}

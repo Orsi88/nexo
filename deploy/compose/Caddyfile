@@ -1,0 +1,32 @@
+# Proxy reverso: duas origens distintas (ADR-007, RNF-024).
+# Em produção, troque ":8080" e ":8081" pelos nomes de host (ex.: painel.exemplo.interno e
+# relatorios.exemplo.interno) para o Caddy emitir certificados TLS (RNF-005).
+{
+	admin off
+}
+
+# Painel
+:8080 {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Content-Security-Policy "default-src 'self'; frame-src {$REPORT_ORIGIN_URL}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	}
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle /health/* {
+		reverse_proxy api:3000
+	}
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Relatórios HTML de terceiros, numa origem separada do painel
+:8081 {
+	reverse_proxy report-origin:3001
+}

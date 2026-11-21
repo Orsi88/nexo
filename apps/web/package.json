@@ -1,0 +1,22 @@
+{
+  "name": "@painel/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Painel web (React + Vite): layout em abas inspirado em editores como o Obsidian, base rosa, gráficos no estilo Grafana. Modo demonstração quando a API não está no ar.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "vite": "8.3.8"
+  }
+}
