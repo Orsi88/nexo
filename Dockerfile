@@ -22,10 +22,10 @@ COPY packages/processor-playwright/package.json packages/processor-playwright/
 COPY packages/processor-sdk/package.json packages/processor-sdk/
 
 FROM manifests AS prod-deps
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund
 
 FROM manifests AS web-build
-RUN npm ci --no-audit --no-fund
+RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build:web
 
