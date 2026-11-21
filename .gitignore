@@ -8,4 +8,5 @@ coverage/
 # Lista local de termos proibidos (scripts/check-sensitive.mjs); nunca versionar
 .sensitive-words
 # Artefatos baixados das execuções (worker em desenvolvimento)
-data/
+/data/
+apps/*/data/
