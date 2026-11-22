@@ -3529,3 +3529,178 @@ table.compact td {
   color: var(--muted);
   cursor: pointer;
 }
+
+/* ---------- Campos de seleção: seta própria, com respiro da borda ---------- */
+
+:root {
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa3b3' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] {
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6274' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+select:not([multiple]):not([size]) {
+  appearance: none;
+  padding-right: 34px;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+
+/* ---------- Janela de execução ---------- */
+
+/* Número e status ficam visíveis enquanto se rola a janela */
+.exec-body .exec-head {
+  position: sticky;
+  top: -4px;
+  z-index: 2;
+  margin: -4px -20px 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-2);
+}
+
+.exec-duration {
+  font-size: 0.82rem;
+}
+
+/* O que esta execução usou de diferente do padrão, numa linha */
+.exec-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.exec-summary .chip {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 10px;
+  overflow-wrap: anywhere;
+}
+
+.exec-summary .chip.changed {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Parâmetros: nome legível à esquerda, valor à direita; valores longos quebram linha */
+.param-list {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.param-row:last-child {
+  border-bottom: 0;
+}
+
+.param-row.changed {
+  background: var(--accent-soft);
+}
+
+.param-row dt {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.param-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.param-row .mono {
+  font-size: 0.82rem;
+}
+
+.param-default {
+  font-size: 0.75rem;
+}
+
+.bool {
+  font-weight: 500;
+}
+
+.bool.yes {
+  color: var(--good-text);
+}
+
+.bool.no {
+  color: var(--muted);
+}
+
+.timeline.compact li {
+  padding-bottom: 6px;
+}
+
+/* Logs por etapa, recolhíveis; a etapa com problema já vem aberta */
+.exec-logs-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-stages {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.log-stage {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+
+.log-stage > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.log-stage > summary::-webkit-details-marker {
+  display: none;
+}
+
+.log-stage[open] > summary {
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+}
+
+.log-stage.problem > summary {
+  color: var(--critical-text);
+}
+
+.log-stage .exec-logs {
+  border: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+@media (max-width: 720px) {
+  .exec-props {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.exec-logs-head .grow {
+  flex: 1;
+}
