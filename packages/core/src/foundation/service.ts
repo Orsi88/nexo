@@ -74,6 +74,21 @@ export interface IssuedLink {
   userId: string;
 }
 
+/** Validade máxima de um token pessoal de acesso (ADR-017). */
+export const ACCESS_TOKEN_MAX_DAYS = 365;
+
+/** Token pessoal de acesso como aparece para o dono (ADR-017). O valor do token nunca está aqui. */
+export interface AccessTokenView {
+  id: string;
+  name: string;
+  organizationId: string;
+  organizationName: string;
+  createdAt: Date;
+  /** Última vez que o token foi usado (precisão de um minuto). */
+  lastUsedAt: Date;
+  expiresAt: Date;
+}
+
 const INVALID_LOGIN =
   "E-mail ou senha inválidos. Depois de várias tentativas seguidas, o acesso fica bloqueado por alguns minutos.";
 
@@ -225,6 +240,12 @@ export class FoundationService {
     return session && this.actorFor(session);
   }
 
+  /** Token pessoal de acesso (ADR-017), com o papel reavaliado a cada chamada, como a sessão. */
+  async resolveAccessToken(token: string): Promise<Actor | undefined> {
+    const session = await this.db.tx({}, (sql) => identity.findActiveAccessToken(sql, token));
+    return session && this.actorFor(session);
+  }
+
   private async actorFor(session: Session): Promise<Actor | undefined> {
     return this.db.tx({ userId: session.userId, organizationId: session.activeOrganizationId }, async (sql) => {
       const user = await identity.getUser(sql, session.userId);
@@ -232,6 +253,11 @@ export class FoundationService {
       if (!session.activeOrganizationId) return { session, user };
       const membership = await tenancy.getMembership(sql, session.activeOrganizationId, user.id);
       const org = membership && (await tenancy.getOrganization(sql, session.activeOrganizationId));
+      if ((!membership || !org) && session.kind === "access-token") {
+        // O token vale só para a organização em que nasceu: sem ela, é revogado.
+        await identity.revokeAccessTokenById(sql, session.id);
+        return undefined;
+      }
       if (!membership || !org) {
         // Perdeu o acesso: a sessão continua, mas sem organização em uso.
         await identity.setSessionOrganization(sql, session.id, null);
@@ -266,9 +292,67 @@ export class FoundationService {
 
   async revokeMySession(actor: Actor, sessionId: string, meta: RequestMeta): Promise<void> {
     await this.db.tx({ userId: actor.user.id }, async (sql) => {
-      if (!(await identity.revokeSession(sql, actor.user.id, sessionId))) throw notFound("Sessão");
+      if (!(await identity.revokeSession(sql, actor.user.id, sessionId, "browser"))) throw notFound("Sessão");
       await this.auditInstance(sql, actor, meta, "auth.session.revoke", "session", sessionId);
     });
+  }
+
+  // =====================================================================
+  // Tokens pessoais de acesso (ADR-017): para clientes de API e MCP
+  // =====================================================================
+
+  /**
+   * Cria um token preso à organização em uso, com as permissões do papel de quem cria (reavaliadas a
+   * cada chamada). Só pela sessão do navegador: um token não cria outro token.
+   */
+  async createAccessToken(actor: Actor, input: { name: unknown; days: unknown }, meta: RequestMeta): Promise<{ token: string; accessToken: AccessTokenView }> {
+    if (actor.session.kind !== "browser") throw new DomainError("forbidden", "Tokens de acesso só podem ser criados pelo painel.");
+    const a = this.requireOrg(actor);
+    const name = requireName(input.name, "token", 80);
+    const days = typeof input.days === "number" && Number.isInteger(input.days) ? input.days : NaN;
+    if (!(days >= 1 && days <= ACCESS_TOKEN_MAX_DAYS)) {
+      throw new DomainError("invalid", `A validade do token vai de 1 a ${ACCESS_TOKEN_MAX_DAYS} dias.`);
+    }
+    return this.db.tx(this.scope(a), async (sql) => {
+      const created = await identity.createAccessToken(sql, {
+        userId: a.user.id,
+        organizationId: a.organization.id,
+        name,
+        days,
+        ...(meta.userAgent ? { userAgent: meta.userAgent } : {}),
+        ...(meta.ip ? { ip: meta.ip } : {}),
+      });
+      await this.auditOrg(sql, a.organization.id, a, meta, "auth.token.create", "access-token", created.session.id, "success", { name, days });
+      return { token: created.token, accessToken: { ...this.tokenView(created.session), organizationName: a.organization.name } };
+    });
+  }
+
+  /** Tokens ativos da própria conta, em todas as organizações. O valor do token nunca volta. */
+  async listMyAccessTokens(actor: Actor): Promise<AccessTokenView[]> {
+    const [tokens, orgs] = await this.db.tx({ userId: actor.user.id }, async (sql) => [
+      await identity.listSessions(sql, actor.user.id, "access-token"),
+      await tenancy.listOrganizationsOfUser(sql, actor.user.id),
+    ] as const);
+    const names = new Map(orgs.map((o) => [o.id, o.name]));
+    return tokens.map((t) => ({ ...this.tokenView(t), organizationName: names.get(t.activeOrganizationId ?? "") ?? "—" }));
+  }
+
+  async revokeMyAccessToken(actor: Actor, tokenId: string, meta: RequestMeta): Promise<void> {
+    await this.db.tx({ userId: actor.user.id }, async (sql) => {
+      if (!(await identity.revokeSession(sql, actor.user.id, tokenId, "access-token"))) throw notFound("Token");
+      await this.auditInstance(sql, actor, meta, "auth.token.revoke", "access-token", tokenId);
+    });
+  }
+
+  private tokenView(s: Session): Omit<AccessTokenView, "organizationName"> {
+    return {
+      id: s.id,
+      name: s.name ?? "",
+      organizationId: s.activeOrganizationId ?? "",
+      createdAt: s.createdAt,
+      lastUsedAt: s.lastSeenAt,
+      expiresAt: s.expiresAt,
+    };
   }
 
   /** Troca a senha da própria conta; encerra as outras sessões. */
@@ -366,6 +450,9 @@ export class FoundationService {
 
   /** Troca a organização em uso (CA-024). Sem associação: 404, igual a uma organização inexistente. */
   async switchOrganization(actor: Actor, organizationId: string, meta: RequestMeta): Promise<Actor> {
+    if (actor.session.kind === "access-token") {
+      throw new DomainError("forbidden", "O token de acesso vale só para a organização em que foi criado. Crie outro token na outra organização.");
+    }
     const ok = await this.db.tx({ userId: actor.user.id, organizationId }, async (sql) => {
       const membership = await tenancy.getMembership(sql, organizationId, actor.user.id);
       if (!membership) return false;
@@ -714,6 +801,11 @@ export class FoundationService {
       if (meta) await this.auditDenied(actor as OrgActor, meta, action ?? operation, { operation });
       throw new DomainError("forbidden", "Seu papel nesta organização não permite esta operação.");
     }
+    return actor as OrgActor;
+  }
+
+  private requireOrg(actor: Actor): OrgActor {
+    if (!actor.organization) throw new DomainError("conflict", "Escolha uma organização para continuar.");
     return actor as OrgActor;
   }
 

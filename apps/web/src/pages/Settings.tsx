@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../context.tsx";
-import type { AccessPolicy, ExecResource, IssuedLink, Member, Operation, Project, Role, Workspace } from "../data/types.ts";
+import type { AccessPolicy, AccessToken, ExecResource, IssuedLink, Member, Operation, Project, Role, Workspace } from "../data/types.ts";
 import { Icon, IconButton, type IconName } from "../icons.tsx";
 import { Audit, Integrations } from "./Admin.tsx";
 import { Modal } from "../modal.tsx";
@@ -190,6 +190,7 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
       </section>
+      <AccessTokensCard />
       <section className="card">
         <div className="setting-row">
           <div>
@@ -202,6 +203,130 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
         </div>
       </section>
     </div>
+  );
+}
+
+// ---------- Tokens pessoais de acesso (ADR-017) ----------
+
+const TOKEN_DAYS = [30, 90, 180, 365];
+
+/** Tokens para clientes de API e MCP (Claude Code e outros), com as permissões do seu papel. */
+function AccessTokensCard() {
+  const { session, data, notify } = useApp();
+  const [reload, setReload] = useState(0);
+  const tokens = useAsync(() => data.accessTokens(), [data, reload]);
+  const [name, setName] = useState("");
+  const [days, setDays] = useState(90);
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<string | null>(null);
+  const org = session.organization;
+
+  const revoke = async (t: AccessToken) => {
+    const ok = await confirmDialog({
+      title: "Revogar token",
+      message: <>O token <strong>{t.name}</strong> deixa de funcionar na hora. Quem o usa (por exemplo, o Claude Code) perde o acesso.</>,
+      confirmLabel: "Revogar",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await data.revokeAccessToken(t.id);
+      notify("Token revogado.");
+      setReload((n) => n + 1);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível revogar.", "error");
+    }
+  };
+
+  return (
+    <section className="card">
+      <div className="card-title">
+        <Icon name="key" size={15} />
+        Tokens de acesso (API e MCP)
+        <span className="hint">para o Claude Code e outros clientes MCP agirem com as suas permissões</span>
+      </div>
+      {org ? (
+        <form
+          className="inline-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            try {
+              const res = await data.createAccessToken({ name: name.trim(), days });
+              setCreated(res.token);
+              setName("");
+              setReload((n) => n + 1);
+            } catch (err) {
+              notify(err instanceof Error ? err.message : "Não foi possível criar o token.", "error");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="field grow">
+            <label htmlFor="token-name">Nome</label>
+            <input id="token-name" value={name} maxLength={80} placeholder="ex.: claude-code no notebook" onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="token-days">Validade</label>
+            <select id="token-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+              {TOKEN_DAYS.map((d) => (
+                <option key={d} value={d}>
+                  {d} dias
+                </option>
+              ))}
+            </select>
+          </div>
+          <button className="btn primary" type="submit" disabled={busy || !name.trim()}>
+            Gerar token
+          </button>
+        </form>
+      ) : (
+        <div className="empty">Escolha uma organização: o token vale só para a organização em uso.</div>
+      )}
+      {org ? (
+        <p className="muted small-print">
+          O token vale só para <strong>{org.name}</strong>. Para outra organização, troque de organização e gere outro.
+        </p>
+      ) : null}
+      {tokens.state === "ready" && tokens.value.length > 0
+        ? tokens.value.map((t) => (
+            <div key={t.id} className="setting-row">
+              <div>
+                <strong>{t.name}</strong>
+                <div className="secondary">
+                  {t.organizationName} · criado em {dateTime(t.createdAt)} · último uso {dateTime(t.lastUsedAt)} · expira em {dateTime(t.expiresAt)}
+                </div>
+              </div>
+              <IconButton icon="trash" label={`Revogar ${t.name}`} danger onClick={() => revoke(t)} />
+            </div>
+          ))
+        : null}
+      {tokens.state === "error" ? <Failure error={tokens.error} /> : null}
+      {created ? <TokenCreatedDialog token={created} onClose={() => setCreated(null)} /> : null}
+    </section>
+  );
+}
+
+function TokenCreatedDialog({ token, onClose }: { token: string; onClose: () => void }) {
+  const { notify } = useApp();
+  const url = `${location.origin}/api/mcp`;
+  const copied = (what: string) => (ok: boolean) =>
+    notify(ok ? `${what} copiado.` : "Não deu para copiar automaticamente: selecione e copie.", ok ? "success" : "error");
+  return (
+    <Modal title="Token criado" subtitle="copie agora: ele não aparece de novo" onClose={onClose} width={640}>
+      <div className="execute-form">
+        <p>Guarde o token como uma senha. Quem tiver o token age no Nexo com as suas permissões, até ele expirar ou ser revogado.</p>
+        <CopyField value={token} label="Copiar token" onCopied={copied("Token")} />
+        <p>
+          Para conectar o <strong>Claude Code</strong>, rode no terminal:
+        </p>
+        <CopyField value={`claude mcp add --transport http nexo ${url} --header "Authorization: Bearer ${token}"`} label="Copiar comando" onCopied={copied("Comando")} />
+        <p className="muted small-print">
+          Outros clientes MCP: endereço <span className="mono">{url}</span> (HTTP) e cabeçalho <span className="mono">Authorization: Bearer &lt;token&gt;</span>.
+        </p>
+      </div>
+    </Modal>
   );
 }
 

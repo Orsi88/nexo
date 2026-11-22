@@ -10,7 +10,7 @@ export const identityModule: ModuleDescriptor = {
 };
 
 export * as identity from "./repository.ts";
-export type { User, UserCredentials, Session, OneTimeToken, OneTimeTokenKind, UserStatus, PendingInvite } from "./repository.ts";
+export type { User, UserCredentials, Session, SessionKind, OneTimeToken, OneTimeTokenKind, UserStatus, PendingInvite } from "./repository.ts";
 export {
   hashPassword,
   verifyPassword,
@@ -20,4 +20,4 @@ export {
   PASSWORD_MIN_LENGTH,
   type Argon2Params,
 } from "./passwords.ts";
-export { newToken, hashToken, looksLikeToken } from "./tokens.ts";
+export { newToken, hashToken, looksLikeToken, newAccessToken, looksLikeAccessToken, ACCESS_TOKEN_PREFIX } from "./tokens.ts";

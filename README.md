@@ -204,6 +204,32 @@ Opcional. Em **Administração → Inteligência artificial**, cadastre a IA (An
 | MCP | `GET/POST /api/mcp-servers`; `POST /api/mcp-servers/:id/refresh`; `PUT /api/mcp-servers/:id/tools`; `POST /api/mcp-servers/:id/archive` |
 | Sessões | `GET/POST /api/assist-sessions`; `GET /api/assist-sessions/:id`; `POST /api/assist-sessions/:id/apply`; `POST /api/assist-sessions/:id/discard` |
 
+### Servidor MCP do Nexo (Claude Code e outros clientes)
+
+O Nexo também é um **servidor** MCP: um cliente de IA seu (Claude Code, por exemplo) configura o painel conversando, com as mesmas permissões que você tem no painel ([ADR-017](docs/adr/ADR-017-tokens-de-acesso-e-servidor-mcp.md)).
+
+1. Em **Administração → Minha conta → Tokens de acesso**, gere um token na organização que o cliente vai usar. Ele aparece uma única vez.
+2. Conecte o cliente:
+
+   ```bash
+   claude mcp add --transport http nexo https://painel.example.com/api/mcp      --header "Authorization: Bearer nexo_pat_..."
+   ```
+
+O token vale para uma organização só, não troca de organização e deixa de valer quando é revogado, quando expira, quando você troca a senha ou quando perde o acesso à organização. Ferramentas disponíveis:
+- estrutura: workspaces e projetos;
+- pipelines: descoberta, vínculo, sincronização, manifesto e arquivo da pipeline;
+- recursos e perfis;
+- execuções: prévia, executar, cancelar, logs e resultados.
+
+Integrações, credenciais, membros e papéis ficam só no painel.
+
+| Área | Rotas |
+|---|---|
+| Tokens | `GET/POST /api/access-tokens`; `DELETE /api/access-tokens/:id` |
+| MCP | `POST /api/mcp` (JSON-RPC, `Authorization: Bearer`) |
+
+O mesmo token serve para chamar a API REST direto, por exemplo de um script de CI, com `Authorization: Bearer` e sem CSRF.
+
 ## Regras para contribuir
 
 - Um módulo de `packages/core` só importa outro pelo `index.ts` dele (ADR-001); o lint verifica.
