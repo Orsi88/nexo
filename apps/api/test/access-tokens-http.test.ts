@@ -53,7 +53,7 @@ describe.skipIf(!TEST_DATABASE_ADMIN_URL)("tokens de acesso e MCP", () => {
     expect((await call(undefined, "POST", "/api/auth/password-reset/complete", { token: boot.link.token, password: PASSWORD })).statusCode).toBe(204);
     // Uma pessoa com papel de leitura, para conferir que o token herda as limitações do papel.
     const root = await login("root@exemplo.test");
-    const invite = await call(root, "POST", "/api/invites", { email: "leitura@exemplo.test", role: "viewer" });
+    const invite = await call(root, "POST", "/api/invites", { email: "leitura@exemplo.test", role: "reader" });
     const inviteToken = invite.json().url.split("#token=")[1];
     expect((await call(undefined, "POST", "/api/auth/invites/accept", { token: inviteToken, password: PASSWORD, displayName: "Leitora" })).statusCode).toBe(200);
   });

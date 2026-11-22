@@ -24,6 +24,15 @@ export async function createTestDatabase(adminUrl = TEST_DATABASE_ADMIN_URL): Pr
   if (!adminUrl) throw new Error("TEST_DATABASE_ADMIN_URL não definida");
   const name = `painel_t_${randomBytes(6).toString("hex")}`;
   const root = new pg.Pool({ connectionString: adminUrl, max: 1 });
+  // O papel painel_app é do servidor, não do banco: arquivos de teste em paralelo corriam para criá-lo
+  // na migração 0001 (cuja trava é por banco) e um deles falhava com "already exists". Cria antes,
+  // tolerando a corrida; a migração então só o encontra pronto.
+  await root.query(`DO $$
+BEGIN
+  CREATE ROLE painel_app NOLOGIN;
+EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
+END
+$$`);
   await root.query(`CREATE DATABASE ${name}`);
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
