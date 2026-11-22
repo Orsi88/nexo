@@ -1,5 +1,6 @@
 import * as demo from "./demo.ts";
 import type {
+  AccessToken,
   AuditEvent,
   ConnectionCheck,
   DiscoveredPipeline,
@@ -139,6 +140,11 @@ export interface DataSource {
   removeMember(userId: string): Promise<void>;
   /** Só o administrador da instalação. */
   issuePasswordReset(email: string): Promise<IssuedLink>;
+  /** Tokens pessoais de acesso (API e MCP) da própria conta. */
+  accessTokens(): Promise<AccessToken[]>;
+  /** Cria um token na organização em uso; o valor só volta agora. */
+  createAccessToken(input: { name: string; days: number }): Promise<{ token: string; accessToken: AccessToken }>;
+  revokeAccessToken(id: string): Promise<void>;
 
   // ----- Distribuição (incremento 7) -----
   /** Cria o link; a URL só aparece agora (o servidor guarda o hash). */
@@ -371,6 +377,11 @@ export function apiSource(csrf: () => string): DataSource {
       await call(`/api/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
     },
     issuePasswordReset: (email) => call("/api/admin/password-resets", { method: "POST", body: JSON.stringify({ email }) }),
+    accessTokens: () => items("/api/access-tokens"),
+    createAccessToken: (input) => call("/api/access-tokens", { method: "POST", body: JSON.stringify(input) }),
+    revokeAccessToken: async (id) => {
+      await call(`/api/access-tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
     connectors: () => items<string>("/api/connectors"),
     createIntegration: (input) => call("/api/integrations", { method: "POST", body: JSON.stringify(input) }),
     discover: (integrationId, q) => {
@@ -500,6 +511,9 @@ function toRun(e: ApiExecution): Run {
 
 // ---------- Demonstração ----------
 
+/** Tokens criados na demonstração (só em memória, sem valor real). */
+const demoTokens: AccessToken[] = [];
+
 const later = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(value)), 40));
 
 // Organização em uso na demonstração (a segunda só existe para mostrar a escolha na entrada).
@@ -604,6 +618,25 @@ export function demoSource(): DataSource {
       await later(demo.demoRemoveMember(userId));
     },
     issuePasswordReset: async () => later({ url: `${location.origin}/redefinir-senha#token=demonstracao`, expiresAt: new Date(Date.now() + 86400000).toISOString() }),
+    accessTokens: async () => later(demoTokens),
+    createAccessToken: async ({ name, days }) => {
+      const now = new Date();
+      const accessToken: AccessToken = {
+        id: crypto.randomUUID(),
+        name,
+        organizationId: "demo",
+        organizationName: "Demonstração",
+        createdAt: now.toISOString(),
+        lastUsedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + days * 86400000).toISOString(),
+      };
+      demoTokens.unshift(accessToken);
+      return later({ token: "nexo_pat_demonstracao_sem_valor_real_000000000000", accessToken });
+    },
+    revokeAccessToken: async (id) => {
+      demoTokens.splice(0, demoTokens.length, ...demoTokens.filter((t) => t.id !== id));
+      await later(undefined);
+    },
     createShareLink: async (input) => later(demo.demoCreateShare(input)),
     previewShareLink: async (input) => later(demo.demoShareView(input)),
     shareLinks: async (filter = {}) =>

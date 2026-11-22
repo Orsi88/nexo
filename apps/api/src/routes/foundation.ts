@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   canPerform,
   DomainError,
+  looksLikeAccessToken,
   looksLikeToken,
   OPERATIONS,
   ROLE_MATRIX,
@@ -130,6 +131,16 @@ export function registerFoundationRoutes(app: FastifyInstance, config: Config, s
     if (MUTATING.has(req.method) && origin !== undefined && origin !== panelOrigin) {
       throw new DomainError("forbidden", "Origem não permitida.");
     }
+    // Token pessoal de acesso (ADR-017): só no cabeçalho Authorization, e o cookie é ignorado. Não há
+    // CSRF a checar: o navegador não envia esse cabeçalho sozinho, então outro site não o forja.
+    const authorization = req.headers.authorization;
+    if (authorization !== undefined) {
+      const bearer = /^Bearer (\S+)$/.exec(authorization)?.[1];
+      const actor = bearer && looksLikeAccessToken(bearer) ? await svc.resolveAccessToken(bearer) : undefined;
+      if (!actor) throw new DomainError("unauthenticated", "Token de acesso inválido, expirado ou revogado.");
+      req.actor = actor;
+      return;
+    }
     const token = parseCookies(req.headers.cookie)[cookieName];
     if (token && looksLikeToken(token)) {
       const actor = await svc.resolveSession(token);
@@ -205,6 +216,20 @@ export function registerFoundationRoutes(app: FastifyInstance, config: Config, s
   app.delete("/api/sessions/:id", async (req, reply) => {
     const { id } = parse(IdParams, req.params);
     await svc.revokeMySession(actorOf(req), id, meta(req));
+    return reply.code(204).send();
+  });
+
+  // ===== Tokens pessoais de acesso (ADR-017) =====
+
+  app.get("/api/access-tokens", async (req) => ({ items: await svc.listMyAccessTokens(actorOf(req)) }));
+
+  app.post("/api/access-tokens", async (req, reply) => {
+    const body = parse(z.object({ name: z.string().max(80), days: z.number().int() }), req.body);
+    return reply.code(201).send(await svc.createAccessToken(actorOf(req), body, meta(req)));
+  });
+
+  app.delete("/api/access-tokens/:id", async (req, reply) => {
+    await svc.revokeMyAccessToken(actorOf(req), parse(IdParams, req.params).id, meta(req));
     return reply.code(204).send();
   });
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { AssistService, EmailService, ExecutionService, FoundationService, NotificationService, OnboardingService, ResultsService, SharingService } from "@painel/core";
 import { registerAssistRoutes } from "./routes/assist.ts";
+import { registerMcpRoutes } from "./routes/mcp.ts";
 import { registerSharingRoutes } from "./routes/sharing.ts";
 import type { EventHub } from "./events.ts";
 import type { Config } from "./config.ts";
@@ -81,6 +82,8 @@ export function buildApiServer(config: Config, deps: Dependencies = {}): Fastify
 
   if (deps.foundation) {
     registerFoundationRoutes(app, config, deps.foundation, deps.email);
+    // Servidor MCP (ADR-017): só reaproveita as rotas registradas aqui, com o token da requisição.
+    registerMcpRoutes(app);
     if (deps.sharing && deps.email) registerSharingRoutes(app, config, deps.sharing, deps.email);
     if (deps.assist) registerAssistRoutes(app, deps.assist);
     if (deps.onboarding) registerOnboardingRoutes(app, deps.onboarding);

@@ -1,5 +1,5 @@
 import type { Sql } from "../../db/database.ts";
-import { hashToken, newToken } from "./tokens.ts";
+import { hashToken, newAccessToken, newToken } from "./tokens.ts";
 
 // Persistência do módulo identity. Tabelas globais (sem organização): identity_users,
 // identity_sessions, identity_one_time_tokens. Nenhum outro módulo lê estas tabelas (ADR-001).
@@ -21,6 +21,8 @@ export interface UserCredentials extends User {
   lockedUntil: Date | null;
 }
 
+export type SessionKind = "browser" | "access-token";
+
 export interface Session {
   id: string;
   userId: string;
@@ -31,6 +33,10 @@ export interface Session {
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
+  /** "browser": cookie do painel; "access-token": token pessoal para API e MCP (ADR-017). */
+  kind: SessionKind;
+  /** Nome dado ao token de acesso; null nas sessões de navegador. */
+  name: string | null;
 }
 
 export type OneTimeTokenKind = "invite" | "password-reset";
@@ -151,7 +157,7 @@ export async function clearFailedLogins(sql: Sql, userId: string): Promise<void>
 
 // ---------- Sessões ----------
 
-const SESSION_COLUMNS = `id, user_id, active_organization_id, csrf_token, user_agent, ip, created_at, last_seen_at, expires_at`;
+const SESSION_COLUMNS = `id, user_id, active_organization_id, csrf_token, user_agent, ip, created_at, last_seen_at, expires_at, kind, name`;
 
 interface SessionRow {
   id: string;
@@ -163,6 +169,8 @@ interface SessionRow {
   created_at: Date;
   last_seen_at: Date;
   expires_at: Date;
+  kind: SessionKind;
+  name: string | null;
 }
 
 function toSession(r: SessionRow): Session {
@@ -176,6 +184,8 @@ function toSession(r: SessionRow): Session {
     createdAt: r.created_at,
     lastSeenAt: r.last_seen_at,
     expiresAt: r.expires_at,
+    kind: r.kind,
+    name: r.name,
   };
 }
 
@@ -202,18 +212,58 @@ export async function createSession(
 }
 
 /**
+ * Token pessoal de acesso (ADR-017): uma sessão do tipo "access-token", com nome, presa à organização
+ * e com validade em dias. O token aparece só aqui, uma vez; o banco guarda o hash.
+ */
+export async function createAccessToken(
+  sql: Sql,
+  input: { userId: string; organizationId: string; name: string; days: number; userAgent?: string; ip?: string },
+): Promise<{ token: string; session: Session }> {
+  const token = newAccessToken();
+  const { rows } = await sql.query<SessionRow>(
+    `INSERT INTO identity_sessions (token_hash, user_id, active_organization_id, csrf_token, user_agent, ip, expires_at, kind, name)
+     VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(days => $7), 'access-token', $8)
+     RETURNING ${SESSION_COLUMNS}`,
+    [hashToken(token), input.userId, input.organizationId, newToken(), input.userAgent?.slice(0, 400) ?? null, input.ip ?? null, input.days, input.name],
+  );
+  return { token, session: toSession(rows[0]!) };
+}
+
+/**
  * Sessão válida para o token: não revogada, dentro da validade absoluta e da inatividade máxima,
  * e de um usuário ativo. Atualiza last_seen_at no máximo uma vez por minuto.
+ * Só sessões de navegador: um token de acesso nunca vale como cookie.
  */
 export async function findActiveSession(sql: Sql, token: string, idleMinutes: number): Promise<Session | undefined> {
   const { rows } = await sql.query<SessionRow>(
-    `SELECT s.id, s.user_id, s.active_organization_id, s.csrf_token, s.user_agent, s.ip, s.created_at, s.last_seen_at, s.expires_at
+    `SELECT ${prefixed("s")}
        FROM identity_sessions s JOIN identity_users u ON u.id = s.user_id
-      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+      WHERE s.token_hash = $1 AND s.kind = 'browser' AND s.revoked_at IS NULL AND s.expires_at > now()
         AND s.last_seen_at > now() - make_interval(mins => $2) AND u.status = 'active'`,
     [hashToken(token), idleMinutes],
   );
-  const r = rows[0];
+  return touched(sql, rows[0]);
+}
+
+/** Token de acesso válido: não revogado, dentro da validade e de um usuário ativo. Não expira por inatividade. */
+export async function findActiveAccessToken(sql: Sql, token: string): Promise<Session | undefined> {
+  const { rows } = await sql.query<SessionRow>(
+    `SELECT ${prefixed("s")}
+       FROM identity_sessions s JOIN identity_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.kind = 'access-token' AND s.revoked_at IS NULL AND s.expires_at > now()
+        AND u.status = 'active'`,
+    [hashToken(token)],
+  );
+  return touched(sql, rows[0]);
+}
+
+function prefixed(alias: string): string {
+  return SESSION_COLUMNS.split(", ")
+    .map((c) => `${alias}.${c}`)
+    .join(", ");
+}
+
+async function touched(sql: Sql, r: SessionRow | undefined): Promise<Session | undefined> {
   if (!r) return undefined;
   if (Date.now() - r.last_seen_at.getTime() > 60_000) {
     await sql.query(`UPDATE identity_sessions SET last_seen_at = now() WHERE id = $1`, [r.id]);
@@ -221,29 +271,31 @@ export async function findActiveSession(sql: Sql, token: string, idleMinutes: nu
   return toSession(r);
 }
 
+/** Troca a organização em uso. Só sessões de navegador: o token de acesso fica preso à organização em que nasceu. */
 export async function setSessionOrganization(sql: Sql, sessionId: string, organizationId: string | null): Promise<void> {
-  await sql.query(`UPDATE identity_sessions SET active_organization_id = $2 WHERE id = $1`, [sessionId, organizationId]);
+  await sql.query(`UPDATE identity_sessions SET active_organization_id = $2 WHERE id = $1 AND kind = 'browser'`, [sessionId, organizationId]);
 }
 
-export async function listSessions(sql: Sql, userId: string): Promise<Session[]> {
+export async function listSessions(sql: Sql, userId: string, kind: SessionKind = "browser"): Promise<Session[]> {
   const { rows } = await sql.query<SessionRow>(
     `SELECT ${SESSION_COLUMNS} FROM identity_sessions
-      WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
-      ORDER BY last_seen_at DESC`,
-    [userId],
+      WHERE user_id = $1 AND kind = $2 AND revoked_at IS NULL AND expires_at > now()
+      ORDER BY ${kind === "browser" ? "last_seen_at" : "created_at"} DESC`,
+    [userId, kind],
   );
   return rows.map(toSession);
 }
 
-export async function revokeSession(sql: Sql, userId: string, sessionId: string): Promise<boolean> {
+export async function revokeSession(sql: Sql, userId: string, sessionId: string, kind?: SessionKind): Promise<boolean> {
   const { rowCount } = await sql.query(
-    `UPDATE identity_sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-    [sessionId, userId],
+    `UPDATE identity_sessions SET revoked_at = now()
+      WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND ($3::text IS NULL OR kind = $3::text)`,
+    [sessionId, userId, kind ?? null],
   );
   return (rowCount ?? 0) > 0;
 }
 
-/** Revoga todas as sessões do usuário, exceto `exceptSessionId` (troca de senha, desativação). */
+/** Revoga todas as sessões e tokens do usuário, exceto `exceptSessionId` (troca de senha, desativação). */
 export async function revokeUserSessions(sql: Sql, userId: string, exceptSessionId?: string): Promise<number> {
   const { rowCount } = await sql.query(
     `UPDATE identity_sessions SET revoked_at = now()
@@ -253,10 +305,23 @@ export async function revokeUserSessions(sql: Sql, userId: string, exceptSession
   return rowCount ?? 0;
 }
 
-/** Tira a organização das sessões de um usuário que perdeu o acesso a ela (RF-140). */
+/** Revoga um token de acesso (sem checar o dono): usado quando ele perde a organização em que nasceu. */
+export async function revokeAccessTokenById(sql: Sql, sessionId: string): Promise<void> {
+  await sql.query(`UPDATE identity_sessions SET revoked_at = now() WHERE id = $1 AND kind = 'access-token' AND revoked_at IS NULL`, [sessionId]);
+}
+
+/**
+ * Usuário perdeu o acesso a uma organização (RF-140): as sessões de navegador ficam sem organização
+ * em uso, e os tokens de acesso dela são revogados (um token sem a sua organização não serve para nada).
+ */
 export async function detachOrganizationFromSessions(sql: Sql, userId: string, organizationId: string): Promise<void> {
   await sql.query(
-    `UPDATE identity_sessions SET active_organization_id = NULL WHERE user_id = $1 AND active_organization_id = $2`,
+    `UPDATE identity_sessions SET revoked_at = now()
+      WHERE user_id = $1 AND active_organization_id = $2 AND kind = 'access-token' AND revoked_at IS NULL`,
+    [userId, organizationId],
+  );
+  await sql.query(
+    `UPDATE identity_sessions SET active_organization_id = NULL WHERE user_id = $1 AND active_organization_id = $2 AND kind = 'browser'`,
     [userId, organizationId],
   );
 }

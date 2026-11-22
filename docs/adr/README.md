@@ -18,5 +18,6 @@
 | [ADR-014](ADR-014-links-compartilhados.md) | Links compartilhados: somente leitura, expiração obrigatória e mascaramento (P-002, P-011) | Aceita |
 | [ADR-015](ADR-015-email-e-retencao.md) | E-mail pelo SMTP da instalação e retenção aplicada pelo worker (P-010) | Aceita |
 | [ADR-016](ADR-016-ia-propria-e-mcp.md) | IA da própria organização e MCP: só leitura, proposta validada, aplicação humana (P-004, P-005) | Aceita |
+| [ADR-017](ADR-017-tokens-de-acesso-e-servidor-mcp.md) | Tokens pessoais de acesso e servidor MCP do Nexo, com as permissões do papel | Aceita |
 
 Uma decisão nova recebe o próximo número. Uma decisão revista não é reescrita: um novo ADR a substitui, e o antigo passa a "Substituída por ADR-xxx".

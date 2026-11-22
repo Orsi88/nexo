@@ -446,6 +446,17 @@ export interface AccessMatrix {
 /** Concessões da organização nos casos "policy", por papel. */
 export type AccessPolicy = Partial<Record<Role, Operation[]>>;
 
+/** Token pessoal de acesso para API e MCP (ADR-017). O valor só aparece na criação. */
+export interface AccessToken {
+  id: string;
+  name: string;
+  organizationId: string;
+  organizationName: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
 /** Link de uso único (convite ou redefinição de senha). Com SMTP configurado, também vai por e-mail. */
 export interface IssuedLink {
   url: string;
