@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../context.tsx";
 import { ApiError } from "../data/errors.ts";
-import type { ExecutionPreview, ExternalRef, PipelineDetail, Run, SystemUnderTest, SystemVersion } from "../data/types.ts";
+import type { ExecutionDetail, ExecutionPreview, ExternalRef, ParameterSpec, PipelineDetail, Run, SystemUnderTest, SystemVersion } from "../data/types.ts";
 import { Icon, IconButton } from "../icons.tsx";
 import { Modal } from "../modal.tsx";
 import { StatusBadge } from "../charts.tsx";
@@ -457,137 +457,292 @@ const TRANSITION_LABEL: Record<string, string> = {
 
 /** Abre uma execução: linha do tempo, parâmetros usados, versão testada, recursos e logs. */
 export function ExecutionDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, version, session } = useApp();
+  const { data, version } = useApp();
   const result = useAsync(() => data.execution(id), [data, id, version]);
-  const [logs, setLogs] = useState<{ state: "idle" | "loading" | "ready" | "error"; text: string }>({ state: "idle", text: "" });
   const [sharing, setSharing] = useState(false);
-  const perms = session.organization?.permissions ?? {};
-
-  const loadLogs = async () => {
-    setLogs({ state: "loading", text: "" });
-    try {
-      setLogs({ state: "ready", text: await data.executionLogs(id) });
-    } catch (err) {
-      setLogs({ state: "error", text: err instanceof Error ? err.message : "Não foi possível ler os logs." });
-    }
-  };
 
   return (
     <Modal title="Execução" subtitle={result.state === "ready" ? result.value.pipeline.name : undefined} onClose={onClose} width={860}>
       {result.state === "loading" ? <Loading /> : null}
       {result.state === "error" ? <Failure error={result.error} /> : null}
-      {result.state === "ready" ? (
-        <div className="execute-form">
-          <div className="exec-head">
-            <span className="mono exec-number">{result.value.execution.number}</span>
-            <StatusBadge status={result.value.execution.status} />
-            <span className="grow" />
-            <RunActions run={result.value.execution} canCancel={Boolean(perms.cancel)} canRerun={Boolean(perms.execute)} />
-            {perms.share ? <IconButton icon="share" label="Compartilhar este resultado" onClick={() => setSharing(true)} /> : null}
-            {result.value.pipeline.externalUrl ? (
-              <a className="btn small" href={result.value.pipeline.externalUrl} target="_blank" rel="noreferrer noopener">
-                <Icon name="external" size={13} />
-                Provedor
-              </a>
-            ) : null}
-          </div>
-          {result.value.execution.statusReason ? <div className="notice accent">{result.value.execution.statusReason}</div> : null}
-
-          <div className="props exec-props">
-            <div className="prop">
-              <div className="prop-label">Branch</div>
-              <div className="prop-value mono">{branch(result.value.execution.ref || null)}</div>
-            </div>
-            <div className="prop">
-              <div className="prop-label">Versão testada</div>
-              <div className="prop-value">
-                {result.value.execution.systemVersion?.parts.length ? <SystemVersionText version={result.value.execution.systemVersion} /> : "—"}
-              </div>
-            </div>
-            <div className="prop">
-              <div className="prop-label">Origem</div>
-              <div className="prop-value">
-                {result.value.execution.trigger === "external" ? "Fora do Nexo" : result.value.execution.trigger === "schedule" ? "Agenda" : "Pelo Nexo"}
-                {result.value.execution.rerunOf ? " · reexecução" : ""}
-              </div>
-            </div>
-            <div className="prop">
-              <div className="prop-label">Máquina / agente</div>
-              <div className="prop-value">{result.value.execution.agentOrPool ?? "—"}</div>
-            </div>
-            <div className="prop">
-              <div className="prop-label">Recursos reservados</div>
-              <div className="prop-value">
-                {result.value.leases.length ? result.value.leases.map((l) => l.resourceName).join(", ") : "nenhum agora"}
-              </div>
-            </div>
-            <div className="prop">
-              <div className="prop-label">Tags no provedor</div>
-              <div className="prop-value mono">{result.value.execution.runTags.length ? result.value.execution.runTags.join(", ") : "—"}</div>
-            </div>
-          </div>
-
-          <ResultsSection
-            executionId={result.value.execution.id}
-            cancelled={result.value.execution.status === "cancelled"}
-            finished={["succeeded", "failed", "cancelled", "unknown", "rejected"].includes(result.value.execution.status) && result.value.execution.detailStatus !== "stale"}
-          />
-
-          <div className="grid two exec-cols">
-            <section>
-              <div className="sut-title">Linha do tempo</div>
-              <ol className="timeline">
-                {result.value.transitions.map((t, i) => (
-                  <li key={i}>
-                    <span className="timeline-dot" />
-                    <span>
-                      <strong>{TRANSITION_LABEL[t.toStatus] ?? t.toStatus}</strong>
-                      <span className="muted"> · {new Date(t.occurredAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" })}</span>
-                      {t.reason ? <span className="timeline-reason">{t.reason}</span> : null}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-            <section>
-              <div className="sut-title">Parâmetros usados</div>
-              {Object.keys(result.value.execution.parameters).length ? (
-                <table className="list compact">
-                  <tbody>
-                    {Object.entries(result.value.execution.parameters).map(([k, v]) => (
-                      <tr key={k}>
-                        <td className="mono">{k}</td>
-                        <td>{String(v)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="muted">Nenhum (padrões da pipeline).</p>
-              )}
-            </section>
-          </div>
-
-          <section>
-            <div className="exec-logs-head">
-              <span className="sut-title" style={{ margin: 0 }}>
-                Logs
-              </span>
-              {result.value.pipeline.capabilities.read.logs ? (
-                <button className="btn small" type="button" onClick={() => void loadLogs()} disabled={logs.state === "loading"}>
-                  {logs.state === "loading" ? <span className="spinner" aria-hidden="true" /> : <Icon name="refresh" size={13} />}
-                  {logs.state === "idle" ? "Ler do provedor" : "Ler de novo"}
-                </button>
-              ) : (
-                <span className="muted">o provedor desta pipeline não oferece logs</span>
-              )}
-            </div>
-            {logs.state === "ready" ? <pre className="exec-logs">{logs.text || "(vazio)"}</pre> : null}
-            {logs.state === "error" ? <p className="warning-text">{logs.text}</p> : null}
-          </section>
-        </div>
-      ) : null}
+      {result.state === "ready" ? <ExecutionBody detail={result.value} onShare={() => setSharing(true)} /> : null}
       {sharing ? <ShareDialog target={{ scope: "execution", executionId: id }} onClose={() => setSharing(false)} /> : null}
     </Modal>
+  );
+}
+
+const FINAL_STATUSES = ["succeeded", "failed", "cancelled", "unknown", "rejected"];
+
+function ExecutionBody({ detail, onShare }: { detail: ExecutionDetail; onShare: () => void }) {
+  const { data, session } = useApp();
+  const perms = session.organization?.permissions ?? {};
+  const run = detail.execution;
+  // Nomes legíveis, ordem e padrões dos parâmetros vêm da configuração da pipeline no Nexo.
+  const pipeline = useAsync(() => data.pipeline(detail.pipeline.id), [data, detail.pipeline.id]);
+  const specs = pipeline.state === "ready" ? pipeline.value.manifest.manifest.parameters : [];
+  const finished = FINAL_STATUSES.includes(run.status) && run.detailStatus !== "stale";
+  const params = orderedParams(run.parameters, specs);
+  const changed = params.filter((p) => p.changed);
+  const duration = durationText(run);
+
+  const optional: Array<[string, React.ReactNode]> = [];
+  if (run.systemVersion?.parts.length) optional.push(["Versão testada", <SystemVersionText version={run.systemVersion} />]);
+  if (run.agentOrPool) optional.push(["Máquina / agente", run.agentOrPool]);
+  if (detail.leases.length) optional.push(["Recursos reservados", detail.leases.map((l) => l.resourceName).join(", ")]);
+  if (run.runTags.length) optional.push(["Tags no provedor", <span className="mono">{run.runTags.join(", ")}</span>]);
+
+  return (
+    <div className="execute-form exec-body">
+      <div className="exec-head">
+        <span className="mono exec-number">{run.number}</span>
+        <StatusBadge status={run.status} />
+        {duration ? <span className="muted exec-duration">{duration}</span> : null}
+        <span className="grow" />
+        <RunActions run={run} canCancel={Boolean(perms.cancel)} canRerun={Boolean(perms.execute)} />
+        {perms.share ? <IconButton icon="share" label="Compartilhar este resultado" onClick={onShare} /> : null}
+        {detail.pipeline.externalUrl ? (
+          <a className="btn small" href={detail.pipeline.externalUrl} target="_blank" rel="noreferrer noopener">
+            <Icon name="external" size={13} />
+            {providerLabel(detail.pipeline.externalUrl)}
+          </a>
+        ) : null}
+      </div>
+      {run.statusReason ? <div className="notice accent">{run.statusReason}</div> : null}
+
+      {params.length ? (
+        <div className="exec-summary" aria-label="O que esta execução usou de diferente do padrão">
+          {changed.length ? (
+            changed.map((p) => (
+              <span key={p.name} className="chip changed" title={p.name}>
+                {p.label}: <strong>{p.display}</strong>
+              </span>
+            ))
+          ) : (
+            <span className="chip">Tudo no padrão da pipeline</span>
+          )}
+        </div>
+      ) : null}
+
+      <div className="props exec-props">
+        <div className="prop">
+          <div className="prop-label">Branch</div>
+          <div className="prop-value mono">{branch(run.ref || null)}</div>
+        </div>
+        <div className="prop">
+          <div className="prop-label">Origem</div>
+          <div className="prop-value">
+            {run.trigger === "external" ? "Fora do Nexo" : run.trigger === "schedule" ? "Agenda" : "Pelo Nexo"}
+            {run.rerunOf ? " · reexecução" : ""}
+          </div>
+        </div>
+        <div className="prop">
+          <div className="prop-label">{run.startedAt ? "Início" : "Na fila desde"}</div>
+          <div className="prop-value">{shortDateTime(run.startedAt ?? run.queuedAt)}</div>
+        </div>
+        {run.finishedAt ? (
+          <div className="prop">
+            <div className="prop-label">Fim</div>
+            <div className="prop-value">{shortDateTime(run.finishedAt)}</div>
+          </div>
+        ) : null}
+        {optional.map(([label, value]) => (
+          <div className="prop" key={label}>
+            <div className="prop-label">{label}</div>
+            <div className="prop-value">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <ResultsSection executionId={run.id} cancelled={run.status === "cancelled"} finished={finished} />
+
+      <section>
+        <div className="sut-title">Linha do tempo</div>
+        <ol className="timeline compact">
+          {detail.transitions.map((t, i) => (
+            <li key={i}>
+              <span className="timeline-dot" />
+              <span>
+                <strong>{TRANSITION_LABEL[t.toStatus] ?? t.toStatus}</strong>
+                <span className="muted"> · {shortDateTime(t.occurredAt, true)}</span>
+                {t.reason ? <span className="timeline-reason">{t.reason}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section>
+        <div className="sut-title">Parâmetros usados</div>
+        {params.length ? (
+          <dl className="param-list">
+            {params.map((p) => (
+              <div key={p.name} className={`param-row${p.changed ? " changed" : ""}`}>
+                <dt title={p.name}>{p.label}</dt>
+                <dd>
+                  <span className={p.isBoolean ? `bool ${p.display === "Sim" ? "yes" : "no"}` : "mono"}>{p.display}</span>
+                  {p.changed && p.defaultDisplay !== undefined ? <span className="muted param-default">padrão: {p.defaultDisplay}</span> : null}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="muted">Nenhum (padrões da pipeline).</p>
+        )}
+      </section>
+
+      <LogsSection executionId={run.id} canRead={detail.pipeline.capabilities.read.logs} autoLoad={finished} failed={run.status === "failed"} />
+    </div>
+  );
+}
+
+interface ParamView {
+  name: string;
+  label: string;
+  display: string;
+  isBoolean: boolean;
+  changed: boolean;
+  defaultDisplay?: string;
+}
+
+function asBool(v: unknown): boolean | undefined {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string" && /^(true|false)$/i.test(v.trim())) return v.trim().toLowerCase() === "true";
+  return undefined;
+}
+
+function show(v: unknown, isBoolean: boolean): string {
+  if (isBoolean) return asBool(v) ? "Sim" : "Não";
+  return String(v);
+}
+
+/** Parâmetros na ordem da pipeline, com nome legível, Sim/Não e o que mudou do padrão. Os que a configuração não conhece vão no fim. */
+function orderedParams(values: Record<string, string | number | boolean>, specs: ParameterSpec[]): ParamView[] {
+  const known = specs.filter((s) => Object.hasOwn(values, s.name));
+  const extra = Object.keys(values).filter((k) => !specs.some((s) => s.name === k)).sort();
+  const views = known.map((s): ParamView => {
+    const v = values[s.name];
+    const isBoolean = s.type === "boolean" || asBool(v) !== undefined;
+    const display = show(v, isBoolean);
+    const defaultDisplay = s.default === undefined ? undefined : show(s.default, isBoolean);
+    return { name: s.name, label: s.label || s.name, display, isBoolean, changed: defaultDisplay !== undefined && defaultDisplay !== display, ...(defaultDisplay !== undefined ? { defaultDisplay } : {}) };
+  });
+  for (const name of extra) {
+    const v = values[name];
+    const isBoolean = asBool(v) !== undefined;
+    views.push({ name, label: name, display: show(v, isBoolean), isBoolean, changed: false });
+  }
+  return views;
+}
+
+function shortDateTime(iso: string, seconds = false): string {
+  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: seconds ? "medium" : "short" });
+}
+
+/** "2h 06min", "12min", "45s". */
+function durationText(run: Run): string | null {
+  let ms: number | null = null;
+  if (run.startedAt && run.finishedAt) ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+  else if (run.durationMinutes !== null) ms = run.durationMinutes * 60_000;
+  if (ms === null || !(ms >= 0)) return null;
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total}s`;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, "0")}min` : `${m}min`;
+}
+
+function providerLabel(url: string): string {
+  if (/visualstudio\.com|dev\.azure\.com/i.test(url)) return "Abrir no Azure";
+  if (/github/i.test(url)) return "Abrir no GitHub";
+  return "Abrir no provedor";
+}
+
+interface LogStage {
+  name: string;
+  text: string;
+  problem: boolean;
+}
+
+/** Os logs chegam com "===== etapa =====" no começo de cada trecho: vira uma seção por etapa. */
+function splitStages(text: string): LogStage[] {
+  const parts = text.split(/^===== (.+) =====$/m);
+  const stages: LogStage[] = [];
+  if (parts[0]?.trim()) stages.push({ name: "Geral", text: parts[0], problem: false });
+  for (let i = 1; i < parts.length; i += 2) stages.push({ name: parts[i]!, text: parts[i + 1] ?? "", problem: false });
+  for (const s of stages) s.problem = /##\[error\]|\berror\b|falh|exit code [1-9]|\b[1-9]\d* failed\b|✘/i.test(s.text);
+  return stages;
+}
+
+function LogsSection({ executionId, canRead, autoLoad, failed }: { executionId: string; canRead: boolean; autoLoad: boolean; failed: boolean }) {
+  const { data, notify } = useApp();
+  const [logs, setLogs] = useState<{ state: "idle" | "loading" | "ready" | "error"; text: string }>({ state: "idle", text: "" });
+
+  const load = async () => {
+    setLogs({ state: "loading", text: "" });
+    try {
+      setLogs({ state: "ready", text: await data.executionLogs(executionId) });
+    } catch (err) {
+      setLogs({ state: "error", text: err instanceof Error ? err.message : "Não foi possível ler os logs." });
+    }
+  };
+
+  // Execução terminada: os logs não mudam mais, então já abrem lidos.
+  useEffect(() => {
+    if (canRead && autoLoad) void load();
+  }, [executionId, canRead, autoLoad]);
+
+  const stages = logs.state === "ready" ? splitStages(logs.text) : [];
+  // Abre a etapa com problema; numa falha sem pista, a última (onde a execução parou).
+  const firstProblem = stages.findIndex((s) => s.problem);
+  const openIndex = firstProblem >= 0 ? firstProblem : failed ? stages.length - 1 : -1;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(logs.text);
+      notify("Logs copiados.");
+    } catch {
+      notify("Não deu para copiar automaticamente.", "error");
+    }
+  };
+
+  return (
+    <section>
+      <div className="exec-logs-head">
+        <span className="sut-title" style={{ margin: 0 }}>
+          Logs
+        </span>
+        <span className="grow" />
+        {logs.state === "ready" && logs.text ? (
+          <button className="btn small" type="button" onClick={() => void copy()}>
+            <Icon name="copy" size={13} />
+            Copiar
+          </button>
+        ) : null}
+        {canRead ? (
+          <button className="btn small" type="button" onClick={() => void load()} disabled={logs.state === "loading"}>
+            {logs.state === "loading" ? <span className="spinner" aria-hidden="true" /> : <Icon name="refresh" size={13} />}
+            {logs.state === "idle" ? "Ler do provedor" : "Ler de novo"}
+          </button>
+        ) : (
+          <span className="muted">o provedor desta pipeline não oferece logs</span>
+        )}
+      </div>
+      {logs.state === "loading" ? <p className="muted">Lendo os logs do provedor…</p> : null}
+      {logs.state === "ready" && !logs.text ? <p className="muted">O provedor não devolveu logs para esta execução.</p> : null}
+      {stages.length ? (
+        <div className="log-stages">
+          {stages.map((s, i) => (
+            <details key={`${s.name}-${i}`} className={`log-stage${s.problem ? " problem" : ""}`} open={i === openIndex}>
+              <summary>
+                {s.problem ? <Icon name="alert" size={13} /> : <Icon name="check" size={13} />}
+                <span>{s.name}</span>
+              </summary>
+              <pre className="exec-logs">{s.text.trim() || "(vazio)"}</pre>
+            </details>
+          ))}
+        </div>
+      ) : null}
+      {logs.state === "error" ? <p className="warning-text">{logs.text}</p> : null}
+    </section>
   );
 }
