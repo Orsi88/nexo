@@ -208,7 +208,8 @@ export function apiSource(csrf: () => string): DataSource {
   async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = { accept: "application/json" };
     if (init.method && init.method !== "GET") {
-      headers["content-type"] = "application/json";
+      // Só com corpo: content-type JSON sem corpo (num DELETE, por exemplo) é recusado com 400.
+      if (init.body !== undefined) headers["content-type"] = "application/json";
       headers["x-csrf-token"] = csrf();
     }
     const res = await fetch(path, { credentials: "same-origin", ...init, headers });

@@ -120,7 +120,8 @@ export function registerFoundationRoutes(app: FastifyInstance, config: Config, s
           ),
         }
       : null,
-    csrfToken: actor.session.csrfToken,
+    // O token de acesso não usa CSRF (ADR-017): só a sessão do navegador recebe o valor.
+    csrfToken: actor.session.kind === "browser" ? actor.session.csrfToken : null,
     expiresAt: actor.session.expiresAt,
   });
 

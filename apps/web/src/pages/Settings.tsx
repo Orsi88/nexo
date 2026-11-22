@@ -210,16 +210,27 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
 
 const TOKEN_DAYS = [30, 90, 180, 365];
 
+/** Bolinha "?" com a explicação na dica (mouse) e para leitores de tela. */
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span className="help-tip" title={text} aria-label={text} role="img" tabIndex={0}>
+      ?
+    </span>
+  );
+}
+
 /** Tokens para clientes de API e MCP (Claude Code e outros), com as permissões do seu papel. */
 function AccessTokensCard() {
   const { session, data, notify } = useApp();
   const [reload, setReload] = useState(0);
   const tokens = useAsync(() => data.accessTokens(), [data, reload]);
-  const [name, setName] = useState("");
+  const [name, setName] = useState("claude-code");
   const [days, setDays] = useState(90);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const org = session.organization;
+  // Colar o comando no campo Nome é o erro mais comum: avisa antes de criar um token com nome estranho.
+  const looksLikeCommand = /claude\s+mcp|nexo_pat_|Bearer\s/i.test(name);
 
   const revoke = async (t: AccessToken) => {
     const ok = await confirmDialog({
@@ -241,10 +252,17 @@ function AccessTokensCard() {
   return (
     <section className="card">
       <div className="card-title">
-        <Icon name="key" size={15} />
-        Tokens de acesso (API e MCP)
-        <span className="hint">para o Claude Code e outros clientes MCP agirem com as suas permissões</span>
+        <Icon name="bot" size={15} />
+        Conectar o Claude Code (MCP)
+        <HelpTip text="MCP é o jeito de um assistente de IA, como o Claude Code, usar o Nexo por você: listar pipelines, vincular, executar e ver resultados, conversando. Ele age com as mesmas permissões que você tem nesta organização." />
       </div>
+      <ol className="steps-inline">
+        <li>Clique em <strong>Gerar token</strong>.</li>
+        <li>Na janela que abrir, clique em <strong>Copiar comando</strong>.</li>
+        <li>
+          Cole no terminal <strong>do seu computador</strong> (PowerShell), aperte Enter e abra uma conversa nova no Claude Code.
+        </li>
+      </ol>
       {org ? (
         <form
           className="inline-form"
@@ -254,7 +272,7 @@ function AccessTokensCard() {
             try {
               const res = await data.createAccessToken({ name: name.trim(), days });
               setCreated(res.token);
-              setName("");
+              setName("claude-code");
               setReload((n) => n + 1);
             } catch (err) {
               notify(err instanceof Error ? err.message : "Não foi possível criar o token.", "error");
@@ -264,11 +282,16 @@ function AccessTokensCard() {
           }}
         >
           <div className="field grow">
-            <label htmlFor="token-name">Nome</label>
-            <input id="token-name" value={name} maxLength={80} placeholder="ex.: claude-code no notebook" onChange={(e) => setName(e.target.value)} required />
+            <label htmlFor="token-name">
+              Nome do token <HelpTip text="Só um apelido para você reconhecer o token na lista (por exemplo, o computador onde vai usar). Não é aqui que se cola o comando." />
+            </label>
+            <input id="token-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} required />
+            {looksLikeCommand ? <small className="warning-text">Isso parece o comando. Aqui vai só um apelido, como "claude-code".</small> : null}
           </div>
           <div className="field">
-            <label htmlFor="token-days">Validade</label>
+            <label htmlFor="token-days">
+              Validade <HelpTip text="Depois desse prazo o token para de funcionar e é só gerar outro. Você também pode revogar a qualquer momento na lista abaixo." />
+            </label>
             <select id="token-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
               {TOKEN_DAYS.map((d) => (
                 <option key={d} value={d}>
@@ -277,7 +300,7 @@ function AccessTokensCard() {
               ))}
             </select>
           </div>
-          <button className="btn primary" type="submit" disabled={busy || !name.trim()}>
+          <button className="btn primary" type="submit" disabled={busy || !name.trim() || looksLikeCommand}>
             Gerar token
           </button>
         </form>
@@ -286,11 +309,13 @@ function AccessTokensCard() {
       )}
       {org ? (
         <p className="muted small-print">
-          O token vale só para <strong>{org.name}</strong>. Para outra organização, troque de organização e gere outro.
+          O token vale só para <strong>{org.name}</strong>. Para conectar outra organização, troque de organização e gere outro token.
         </p>
       ) : null}
-      {tokens.state === "ready" && tokens.value.length > 0
-        ? tokens.value.map((t) => (
+      {tokens.state === "ready" && tokens.value.length > 0 ? (
+        <>
+          <div className="subhead">Tokens ativos</div>
+          {tokens.value.map((t) => (
             <div key={t.id} className="setting-row">
               <div>
                 <strong>{t.name}</strong>
@@ -300,8 +325,9 @@ function AccessTokensCard() {
               </div>
               <IconButton icon="trash" label={`Revogar ${t.name}`} danger onClick={() => revoke(t)} />
             </div>
-          ))
-        : null}
+          ))}
+        </>
+      ) : null}
       {tokens.state === "error" ? <Failure error={tokens.error} /> : null}
       {created ? <TokenCreatedDialog token={created} onClose={() => setCreated(null)} /> : null}
     </section>
@@ -311,20 +337,48 @@ function AccessTokensCard() {
 function TokenCreatedDialog({ token, onClose }: { token: string; onClose: () => void }) {
   const { notify } = useApp();
   const url = `${location.origin}/api/mcp`;
-  const copied = (what: string) => (ok: boolean) =>
-    notify(ok ? `${what} copiado.` : "Não deu para copiar automaticamente: selecione e copie.", ok ? "success" : "error");
+  const command = `claude mcp add --transport http nexo ${url} --header "Authorization: Bearer ${token}" --scope user`;
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      notify("Comando copiado. Agora cole no terminal do seu computador.");
+    } catch {
+      notify("Não deu para copiar automaticamente: selecione o comando abaixo e copie.", "error");
+    }
+  };
+
   return (
-    <Modal title="Token criado" subtitle="copie agora: ele não aparece de novo" onClose={onClose} width={640}>
+    <Modal title="Pronto! Falta só um passo" subtitle="conecte o Claude Code a este Nexo" onClose={onClose} width={640}>
       <div className="execute-form">
-        <p>Guarde o token como uma senha. Quem tiver o token age no Nexo com as suas permissões, até ele expirar ou ser revogado.</p>
-        <CopyField value={token} label="Copiar token" onCopied={copied("Token")} />
-        <p>
-          Para conectar o <strong>Claude Code</strong>, rode no terminal:
-        </p>
-        <CopyField value={`claude mcp add --transport http nexo ${url} --header "Authorization: Bearer ${token}"`} label="Copiar comando" onCopied={copied("Comando")} />
-        <p className="muted small-print">
-          Outros clientes MCP: endereço <span className="mono">{url}</span> (HTTP) e cabeçalho <span className="mono">Authorization: Bearer &lt;token&gt;</span>.
-        </p>
+        <button type="button" className="btn primary big-copy" onClick={copy}>
+          <Icon name={copied ? "check" : "copy"} size={16} />
+          {copied ? "Comando copiado" : "Copiar comando"}
+        </button>
+        <ol className="steps-inline">
+          <li>
+            Abra o <strong>PowerShell do seu computador</strong> (no Windows: tecla Iniciar, digite "PowerShell"). Não use o terminal do servidor.
+          </li>
+          <li>
+            Cole com o <strong>botão direito do mouse</strong> e aperte <strong>Enter</strong>. Deve aparecer "Added HTTP MCP server nexo".
+          </li>
+          <li>
+            Abra uma <strong>conversa nova</strong> no Claude Code e peça, por exemplo: "liste as pipelines do Nexo".
+          </li>
+        </ol>
+        <details>
+          <summary>Ver o comando e o token</summary>
+          <CopyField value={command} label="Copiar comando" onCopied={(ok) => notify(ok ? "Comando copiado." : "Selecione e copie.", ok ? "success" : "error")} />
+          <p className="muted small-print">
+            Outros clientes MCP: endereço <span className="mono">{url}</span> (HTTP) e cabeçalho <span className="mono">Authorization: Bearer</span> com o token:
+          </p>
+          <CopyField value={token} label="Copiar token" onCopied={(ok) => notify(ok ? "Token copiado." : "Selecione e copie.", ok ? "success" : "error")} />
+        </details>
+        <div className="notice warning">
+          <Icon name="alert" size={14} /> Esta é a única vez que o token aparece. Trate como senha: não mande em print nem em conversa. Se vazar, revogue na lista.
+        </div>
       </div>
     </Modal>
   );

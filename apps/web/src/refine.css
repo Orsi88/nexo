@@ -3465,3 +3465,67 @@ table.compact td {
 .toast.toast-error > svg {
   color: var(--critical-text);
 }
+
+/* ---------- Conectar o Claude Code (tokens de acesso, ADR-017) ---------- */
+
+/* Bolinha "?" com a explicação na dica do mouse */
+.help-tip {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.help-tip:hover,
+.help-tip:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Passo a passo curto e numerado */
+.steps-inline {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 14px;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.steps-inline strong {
+  color: var(--text);
+}
+
+.subhead {
+  margin: 14px 0 4px;
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Ação principal da janela, grande e óbvia */
+.btn.big-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 1rem;
+}
+
+.execute-form details summary {
+  margin-bottom: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
