@@ -1,0 +1,23 @@
+# Camada de produção sobre docker-compose.yml: proxy nas portas 80/443 com TLS automático.
+# Ative no .env com:  COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+# (assim o "docker compose ..." de sempre já usa as duas camadas). Guia: docs/implantacao-producao.md
+
+services:
+  proxy:
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?defina PUBLIC_BASE_URL com https://}
+      REPORT_ORIGIN_URL: ${REPORT_ORIGIN_URL:?defina REPORT_ORIGIN_URL com https://}
+    # !override troca as portas de desenvolvimento (8080/8081) em vez de somar a elas (Compose 2.24.4+)
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      # certificados e chaves do TLS; sem este volume o Caddy pede certificados novos a cada recriação
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

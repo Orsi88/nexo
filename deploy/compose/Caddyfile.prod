@@ -1,0 +1,36 @@
+# Proxy reverso para produção com TLS automático (RNF-005), em duas origens distintas (ADR-007, RNF-024).
+# Os endereços vêm do .env: PUBLIC_BASE_URL (painel) e REPORT_ORIGIN_URL (relatórios), por exemplo
+# https://painel.example.com e https://relatorios.example.com. Os dois nomes precisam apontar (DNS A/AAAA)
+# para este servidor, com as portas 80 e 443 liberadas, para o Caddy emitir os certificados.
+# Usado por docker-compose.prod.yml; o Caddyfile de desenvolvimento continua sendo o "Caddyfile".
+{
+	admin off
+}
+
+# Painel
+{$PUBLIC_BASE_URL} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Strict-Transport-Security "max-age=31536000"
+		Content-Security-Policy "default-src 'self'; frame-src {$REPORT_ORIGIN_URL}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	}
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle /health/* {
+		reverse_proxy api:3000
+	}
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Relatórios HTML de terceiros, numa origem separada do painel
+{$REPORT_ORIGIN_URL} {
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy report-origin:3001
+}

@@ -69,7 +69,7 @@ docker compose up -d --build
 - Painel: <http://localhost:8080>
 - Relatórios, em origem separada: <http://localhost:8081>
 
-A ordem de subida é PostgreSQL e storage (SeaweedFS), depois `migrate`, depois `api`, `worker` e `report-origin`, e por fim o proxy (Caddy). Em produção, troque as portas do [Caddyfile](deploy/compose/Caddyfile) pelos nomes de host para ter TLS.
+A ordem de subida é PostgreSQL e storage (SeaweedFS), depois `migrate`, depois `api`, `worker` e `report-origin`, e por fim o proxy (Caddy). Para produção, com domínio e TLS automático num servidor, siga o guia de [implantação em produção](docs/implantacao-producao.md).
 
 ### Primeiro acesso
 
