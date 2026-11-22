@@ -21,6 +21,31 @@ describe("api", () => {
     const app = buildApiServer(config, { checkDatabase: async () => undefined });
     expect((await app.inject({ method: "GET", url: "/health/ready" })).statusCode).toBe(200);
   });
+
+  describe("corpo JSON", () => {
+    const app = buildApiServer(config);
+    app.delete("/t", async (_req, reply) => reply.code(204).send());
+    app.post("/t", async (req) => ({ body: req.body ?? null }));
+    const json = { "content-type": "application/json" };
+
+    it("content-type JSON sem corpo vale como sem corpo (DELETE do painel)", async () => {
+      expect((await app.inject({ method: "DELETE", url: "/t", headers: json })).statusCode).toBe(204);
+      expect((await app.inject({ method: "POST", url: "/t", headers: json, payload: "" })).json()).toEqual({ body: null });
+    });
+
+    it("JSON malformado continua 400", async () => {
+      expect((await app.inject({ method: "POST", url: "/t", headers: json, payload: "{nao" })).statusCode).toBe(400);
+    });
+
+    it("mantém a proteção contra __proto__ do parser padrão", async () => {
+      const res = await app.inject({ method: "POST", url: "/t", headers: json, payload: '{"__proto__":{"admin":true}}' });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("JSON válido chega inteiro", async () => {
+      expect((await app.inject({ method: "POST", url: "/t", headers: json, payload: '{"a":1}' })).json()).toEqual({ body: { a: 1 } });
+    });
+  });
 });
 
 describe("report-origin (ADR-007, CA-012)", () => {

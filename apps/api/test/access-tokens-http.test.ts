@@ -103,6 +103,18 @@ describe.skipIf(!TEST_DATABASE_ADMIN_URL)("tokens de acesso e MCP", () => {
     expect((await bearer(cookieToken, "GET", "/api/session")).statusCode).toBe(401);
   });
 
+  it("revoga pelo painel, que manda content-type JSON sem corpo no DELETE", async () => {
+    const root = await login("root@exemplo.test");
+    const { token, id } = await newToken(root, "revogar-pelo-painel");
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/access-tokens/${id}`,
+      headers: { cookie: root.cookie, "x-csrf-token": root.csrf, "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(204);
+    expect((await bearer(token, "GET", "/api/session")).statusCode).toBe(401);
+  });
+
   it("o token não troca de organização nem cria outro token", async () => {
     const root = await login("root@exemplo.test");
     const other = await call(root, "POST", "/api/organizations", { name: "Globex", slug: "globex" });

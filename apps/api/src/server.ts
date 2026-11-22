@@ -36,7 +36,7 @@ export interface Dependencies {
 }
 
 function baseServer(config: Config): FastifyInstance {
-  return Fastify({
+  const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
       // Nunca registrar credenciais (RN-017, RNF-033).
@@ -52,6 +52,15 @@ function baseServer(config: Config): FastifyInstance {
     trustProxy: config.TRUST_PROXY,
     bodyLimit: 64 * 1024,
   });
+  // JSON vazio vale como "sem corpo": clientes mandam content-type JSON até em DELETE sem corpo, e o
+  // padrão do Fastify recusava com 400 (revogar token e remover membro falhavam no painel).
+  // O resto vai para o parser padrão, que mantém a proteção contra __proto__ e o 400 de JSON malformado.
+  const defaultJson = app.getDefaultJsonParser("error", "error");
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+    if (String(body).trim() === "") return done(null, undefined);
+    defaultJson(req, body as string, done);
+  });
+  return app;
 }
 
 /** Servidor do painel: API, SSE e webhooks. Incremento 1: autenticação, organizações e auditoria. */
